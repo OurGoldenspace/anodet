@@ -1,4 +1,7 @@
+import { setDefaultResultOrder } from "node:dns"
 import { NextRequest, NextResponse } from "next/server"
+
+setDefaultResultOrder("ipv6first")
 
 export async function proxyBackend(request: NextRequest, path: string[]) {
   const base = (process.env.API_PROXY_URL || "http://127.0.0.1:8000").replace(/\/$/, "")
@@ -32,9 +35,14 @@ export async function proxyBackend(request: NextRequest, path: string[]) {
     const type = upstream.headers.get("content-type")
     if (type) out.set("content-type", type)
     return new NextResponse(body, { status: upstream.status, headers: out })
-  } catch {
+  } catch (error) {
+    const code = error instanceof Error && "code" in error ? String((error as { code?: string }).code) : ""
     return NextResponse.json(
-      { detail: "The shop desk could not reach the scoring service. Reload and try again." },
+      {
+        detail: code
+          ? `The shop desk could not reach the scoring service (${code}).`
+          : "The shop desk could not reach the scoring service. Reload and try again.",
+      },
       { status: 502 },
     )
   }
