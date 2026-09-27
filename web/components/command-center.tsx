@@ -1,14 +1,13 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { clearSession, emptyShop, getEngine, getFixes, getFleet, getNotes, getShop, readSession, removeImportedAsset, resetMemory, seedDemo } from "@/lib/api"
+import { clearSession, emptyShop, getEngine, getFixes, getFleet, getShop, readSession, removeImportedAsset } from "@/lib/api"
 import { formatUnit, OUTCOME_LABEL } from "@/lib/format"
 import type { EngineDetail, FleetResponse, ReviewedFix, ShopSession } from "@/lib/types"
 import { CasePanel } from "@/components/case-panel"
 import { EngineStage } from "@/components/engine-stage"
 import { FleetList } from "@/components/fleet-list"
 import { PathGate } from "@/components/path-gate"
-import { PitchDrawer } from "@/components/pitch-drawer"
 import { ShopIntake } from "@/components/shop-intake"
 import { SignIn } from "@/components/sign-in"
 
@@ -22,17 +21,13 @@ export function CommandCenter() {
   const [detail, setDetail] = useState<EngineDetail | null>(null)
   const [cycle, setCycle] = useState<number | null>(null)
   const [fixes, setFixes] = useState<ReviewedFix[]>([])
-  const [isPitchOpen, setIsPitchOpen] = useState(false)
   const [isShopOpen, setIsShopOpen] = useState(false)
-  const [isInviteOpen, setIsInviteOpen] = useState(false)
   const [demoNote, setDemoNote] = useState<string | null>(null)
   const [session, setSession] = useState<ShopSession | null>(null)
   const [sessionReady, setSessionReady] = useState(false)
-  const [notes, setNotes] = useState<{ name: string; machine: string }[]>([])
   const [deskPath, setDeskPath] = useState<string | null>(null)
   const [pathReady, setPathReady] = useState(false)
   const [deskTab, setDeskTab] = useState<DeskTab>("case")
-  const [inviteCopied, setInviteCopied] = useState(false)
   const [demoTools, setDemoTools] = useState(true)
   const [appendMode, setAppendMode] = useState(false)
 
@@ -109,18 +104,6 @@ export function CommandCenter() {
     return () => window.removeEventListener("keydown", onKey)
   }, [cycle, detail, onCycleChange])
 
-  async function onSeed() {
-    const seeded = await seedDemo()
-    const nextFixes = await getFixes()
-    setFixes(nextFixes.fixes)
-    if (seeded.recallUnitId != null) {
-      setSelectedId(seeded.recallUnitId)
-      setDemoNote(`Engine ${seeded.reviewedUnitId} is reviewed. This engine shares the signature.`)
-      return
-    }
-    setDemoNote("Reviewed fix saved. No second engine shared two sensors.")
-  }
-
   function onSignOut() {
     clearSession()
     setSession(null)
@@ -151,7 +134,7 @@ export function CommandCenter() {
 
   function onShopImported(next: FleetResponse, unitId: number | null) {
     setFleet(next)
-    setDemoNote("Shop desk updated. The detector stayed on the healthy hours you marked.")
+    setDemoNote("Shop file loaded.")
     if (unitId != null) {
       setSelectedId(unitId)
       setDeskTab("case")
@@ -161,7 +144,7 @@ export function CommandCenter() {
 
   async function onRemoveAsset() {
     if (selectedId == null) return
-    if (!window.confirm("Remove this imported asset? Sample engines stay. Fixes on this asset are deleted.")) return
+    if (!window.confirm("Remove this imported asset? Saved fixes on it are deleted.")) return
     try {
       const next = await removeImportedAsset(selectedId)
       setFleet(next)
@@ -173,36 +156,13 @@ export function CommandCenter() {
     }
   }
 
-  async function onCopyInvite() {
-    const origin = window.location.origin
-    const text = `Anodet — ${session?.shop ?? "Sample fleet"}\nOpen ${origin}\nSign in with your own name. Ask the lead for the shop passphrase.\nYour name is stored on every fix you save.`
-    try {
-      await navigator.clipboard.writeText(text)
-      setInviteCopied(true)
-    } catch {
-      setDemoNote(text)
-    }
-  }
-
   async function refreshFixes() {
     const nextFixes = await getFixes()
     setFixes(nextFixes.fixes)
   }
 
-  async function refreshNotes() {
-    const next = await getNotes()
-    setNotes(next.notes)
-  }
-
-  async function onReset() {
-    await resetMemory()
-    setFixes([])
-    setDemoNote("Sample case cleared. Saved technician fixes stay.")
-    setSelectedId(fleet?.recommendedUnitId ?? selectedId)
-  }
-
   async function onEmpty() {
-    if (!window.confirm("Remove every saved fix, including technicians' fixes? The manual and the machine notes stay.")) return
+    if (!window.confirm("Clear all saved fixes and start Engine 31 over?")) return
     await emptyShop()
     setFixes([])
     setDemoNote("Shop memory is empty. Engine 31 starts with nothing remembered.")
@@ -231,7 +191,7 @@ export function CommandCenter() {
   if (!fleet) {
     return (
       <main className="flex min-h-screen items-center justify-center px-6">
-        <p className="text-sm text-mist">Loading the NASA demo fleet and shop memory…</p>
+        <p className="text-sm text-mist">Loading the shop…</p>
       </main>
     )
   }
@@ -247,151 +207,46 @@ export function CommandCenter() {
 
   const isLead = session.role !== "technician"
   const canUndoImport = isLead && !isSampleEngine
-  const showJudgeTools = isLead && demoTools && !isShopDesk
+  const showStartOver = isLead && demoTools && !isShopDesk
+  const more = {
+    isLead,
+    hasShopAssets,
+    canUndoImport,
+    onBringFile: () => {
+      setAppendMode(false)
+      setIsShopOpen(true)
+    },
+    onLaterHours: () => {
+      setAppendMode(true)
+      setIsShopOpen(true)
+    },
+    onRemoveAsset: () => void onRemoveAsset(),
+    onChangeStart,
+    onSignOut,
+  }
 
   return (
     <main className="flex h-dvh flex-col overflow-hidden">
       <header className="flex shrink-0 items-center justify-between gap-4 border-b border-line px-5 py-3">
-        <div>
-          <div className="flex items-baseline gap-3">
-            <p className="font-mono text-lg tracking-[0.22em]">ANODET</p>
-            <p className="hidden text-sm text-mist sm:block">Machines generate data. Technicians generate knowledge.</p>
-          </div>
-          <p className="mt-1 hidden text-xs text-mist sm:block">
-            {isShopDesk
-              ? hasShopAssets
-                ? `Your shop file · ${shopEngines.length} assets · NASA demo is on Change start`
-                : "Your shop · drop a history file to start"
-              : hasShopAssets
-                ? `Shop assets on the NASA demo fleet · ${fleet.stats.engines} engines`
-                : `NASA C-MAPSS FD001 demo · not a customer · ${fleet.stats.engines} engines`}
-          </p>
-        </div>
+        <p className="font-mono text-lg tracking-[0.22em]">ANODET</p>
         <div className="flex items-center justify-end gap-2">
-          <p className="max-w-[8rem] truncate text-sm text-mist sm:max-w-none">
-            {session.name}
-            <span className="ml-2 font-mono text-[10px] uppercase tracking-[0.12em]">
-              {session.role === "technician" ? "Tech" : "Lead"}
-            </span>
-          </p>
-          <details className="relative lg:hidden">
-            <summary className="cursor-pointer list-none rounded-md border border-line px-3 py-2 text-sm">Menu</summary>
-            <div className="absolute right-0 z-20 mt-2 flex w-64 flex-col gap-2 rounded-md border border-line bg-ink p-2">
-              <button type="button" onClick={() => { setInviteCopied(false); setIsInviteOpen(true) }} className="rounded-md border border-line px-3 py-2 text-left text-sm">
-                Invite
-              </button>
-              {isLead ? (
-                <button type="button" onClick={() => { setAppendMode(false); setIsShopOpen(true) }} className="rounded-md border border-line px-3 py-2 text-left text-sm">
-                  Bring shop file
-                </button>
-              ) : null}
-              {hasShopAssets ? (
-                <button type="button" onClick={() => { setAppendMode(true); setIsShopOpen(true) }} className="rounded-md border border-line px-3 py-2 text-left text-sm">
-                  Later hours
-                </button>
-              ) : null}
-              {showJudgeTools && isSampleEngine ? (
-                <>
-                  <button type="button" onClick={() => void onSeed()} className="rounded-md bg-amber px-3 py-2 text-left text-sm font-medium text-ink">
-                    Load reviewed case
-                  </button>
-                  <button type="button" onClick={() => void onEmpty()} className="rounded-md border border-flare/50 px-3 py-2 text-left text-sm text-flare">
-                    Reset demo to empty
-                  </button>
-                  <button type="button" onClick={() => { void refreshNotes(); setIsPitchOpen(true) }} className="rounded-md border border-line px-3 py-2 text-left text-sm">
-                    Investor brief
-                  </button>
-                </>
-              ) : null}
-              {canUndoImport ? (
-                <button type="button" onClick={() => void onRemoveAsset()} className="rounded-md border border-line px-3 py-2 text-left text-sm text-mist">
-                  Undo this import
-                </button>
-              ) : null}
-              <button type="button" onClick={onChangeStart} className="rounded-md border border-line px-3 py-2 text-left text-sm">
-                Change start
-              </button>
-              <button type="button" onClick={onSignOut} className="rounded-md border border-line px-3 py-2 text-left text-sm">
-                Sign out
-              </button>
-            </div>
-          </details>
-          <div className="hidden flex-wrap items-center justify-end gap-2 lg:flex">
+          <p className="max-w-[8rem] truncate text-sm text-mist sm:max-w-none">{session.name}</p>
+          {showStartOver ? (
             <button
               type="button"
-              onClick={() => {
-                setInviteCopied(false)
-                setIsInviteOpen(true)
-              }}
+              data-testid="start-over"
+              onClick={() => void onEmpty()}
               className="rounded-md border border-line px-3 py-2 text-sm"
             >
-              Invite
+              Start over
             </button>
-            {isLead ? (
-              <button type="button" onClick={() => { setAppendMode(false); setIsShopOpen(true) }} className="rounded-md border border-line px-3 py-2 text-sm">
-                Bring shop file
-              </button>
-            ) : null}
-            {hasShopAssets ? (
-              <button type="button" onClick={() => { setAppendMode(true); setIsShopOpen(true) }} className="rounded-md border border-line px-3 py-2 text-sm">
-                Later hours
-              </button>
-            ) : null}
-            {showJudgeTools ? (
-              <details className="relative" onToggle={(event) => { if (event.currentTarget.open) void refreshNotes() }}>
-                <summary className="cursor-pointer list-none rounded-md border border-line px-3 py-2 text-sm">Sample shop</summary>
-                <div className="absolute right-0 z-10 mt-2 flex w-72 flex-col gap-2 rounded-md border border-line bg-ink p-2">
-                  <button type="button" onClick={() => void onSeed()} className="rounded-md bg-amber px-3 py-2 text-left text-sm font-medium text-ink">
-                    Load reviewed case
-                  </button>
-                  <button type="button" onClick={() => void onReset()} className="rounded-md border border-line px-3 py-2 text-left text-sm">
-                    Clear sample memory
-                  </button>
-                  <button type="button" onClick={() => void onEmpty()} className="rounded-md border border-flare/50 px-3 py-2 text-left text-sm text-flare">
-                    Reset demo to empty
-                  </button>
-                  <button type="button" onClick={() => { void refreshNotes(); setIsPitchOpen(true) }} className="rounded-md border border-line px-3 py-2 text-left text-sm">
-                    Investor brief
-                  </button>
-                  {canUndoImport ? (
-                    <button type="button" onClick={() => void onRemoveAsset()} className="rounded-md border border-line px-3 py-2 text-left text-sm text-mist">
-                      Undo this import
-                    </button>
-                  ) : null}
-                  <div className="border-t border-line px-1 pt-2">
-                    <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-mist">Machines they repair twice</p>
-                    {notes.length ? (
-                      <ul className="mt-2 space-y-1">
-                        {notes.map((note) => (
-                          <li key={note.name} className="text-sm leading-5">
-                            {note.name}: {note.machine}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="mt-2 text-sm text-mist">No one has named a machine yet.</p>
-                    )}
-                  </div>
-                </div>
-              </details>
-            ) : canUndoImport ? (
-              <details className="relative">
-                <summary className="cursor-pointer list-none rounded-md border border-line px-3 py-2 text-sm">More</summary>
-                <div className="absolute right-0 z-10 mt-2 flex w-64 flex-col gap-2 rounded-md border border-line bg-ink p-2">
-                  <button type="button" onClick={() => void onRemoveAsset()} className="rounded-md border border-line px-3 py-2 text-left text-sm text-mist">
-                    Undo this import
-                  </button>
-                  <p className="px-1 text-xs leading-5 text-mist">Only if the file was the wrong asset. Saved fixes on it are deleted.</p>
-                </div>
-              </details>
-            ) : null}
-            <button type="button" onClick={onChangeStart} className="rounded-md border border-line px-3 py-2 text-sm">
-              Change start
-            </button>
-            <button type="button" onClick={onSignOut} className="rounded-md border border-line px-3 py-2 text-sm">
-              Sign out
-            </button>
-          </div>
+          ) : null}
+          <details className="relative">
+            <summary className="cursor-pointer list-none rounded-md border border-line px-3 py-2 text-sm">More</summary>
+            <div className="absolute right-0 z-20 mt-2 flex w-56 flex-col gap-2 rounded-md border border-line bg-ink p-2">
+              <MoreActions {...more} />
+            </div>
+          </details>
         </div>
       </header>
       <div className="hidden shrink-0 items-center gap-6 border-b border-line px-5 py-2 text-xs text-mist lg:flex">
@@ -403,16 +258,6 @@ export function CommandCenter() {
           <span className="font-mono uppercase tracking-[0.12em] text-foam">Remembered </span>
           {fixes.length}
         </p>
-        <p>
-          <span className="font-mono uppercase tracking-[0.12em] text-foam">Loop </span>
-          Detect → Investigate → Resolve → Remember → Reuse
-        </p>
-        {!isShopDesk ? (
-          <p>
-            <span className="font-mono uppercase tracking-[0.12em] text-foam">NASA demo lead </span>
-            {fleet.stats.medianLeadTime} cycles · not field accuracy
-          </p>
-        ) : null}
       </div>
 
       <div className="grid shrink-0 grid-cols-3 border-b border-line lg:hidden">
@@ -436,7 +281,7 @@ export function CommandCenter() {
           <FleetList
             engines={visibleEngines}
             recommendedUnitId={fleet.recommendedUnitId}
-            emptyLabel={isShopDesk ? "Bring a shop file. The NASA demo is on Change start." : undefined}
+            emptyLabel={isShopDesk ? "Bring a shop file from More." : undefined}
             selectedId={selectedId}
             query={query}
             onQueryChange={setQuery}
@@ -449,13 +294,13 @@ export function CommandCenter() {
         <div className={`h-full min-h-0 overflow-hidden ${deskTab === "engine" ? "block" : "hidden"} lg:block`}>
           {shopEmpty ? (
             <section className="scroll-thin flex h-full min-h-0 flex-col items-start justify-center gap-3 overflow-y-auto px-6 text-sm leading-6 text-mist">
-              <p>This desk is your shop, not the NASA demo fleet.</p>
+              <p>Drop a shop file to start.</p>
               {isLead ? (
-                <button type="button" onClick={() => { setAppendMode(false); setIsShopOpen(true) }} className="rounded-md bg-amber px-3 py-2 text-sm font-medium text-ink">
+                <button type="button" onClick={more.onBringFile} className="rounded-md bg-amber px-3 py-2 text-sm font-medium text-ink">
                   Bring a shop file
                 </button>
               ) : (
-                <p>Ask the shop lead to Fit the first history file.</p>
+                <p>Ask the shop lead to load the first file.</p>
               )}
             </section>
           ) : stageReady ? (
@@ -467,7 +312,7 @@ export function CommandCenter() {
         <div className={`h-full min-h-0 overflow-hidden ${deskTab === "case" ? "block" : "hidden"} lg:block`}>
           {shopEmpty ? (
             <aside className="scroll-thin h-full overflow-y-auto p-4 text-sm leading-6 text-mist">
-              Drop your hours and paste the procedure you use. The detector waits until you mark the healthy window.
+              Drop your hours and paste the procedure you use.
             </aside>
           ) : stageReady ? (
             <CasePanel
@@ -503,32 +348,6 @@ export function CommandCenter() {
           </ul>
         ) : null}
       </footer>
-      {isInviteOpen ? (
-        <div className="fixed inset-0 z-20 bg-black/60" onClick={() => setIsInviteOpen(false)} role="presentation">
-          <aside
-            role="dialog"
-            aria-modal="true"
-            aria-label="Invite a technician"
-            className="scroll-thin absolute right-0 top-0 h-dvh w-full max-w-md overflow-y-auto border-l border-line bg-ink p-6 pb-16"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-mist">Same shop</p>
-            <h2 className="mt-1 text-xl">Invite a technician</h2>
-            <p className="mt-4 text-sm leading-6 text-mist">
-              They open this desk, enter their own name, and use the same shop passphrase. Fixes they save show their name. They see the fixes you already saved.
-            </p>
-            <pre className="mt-4 whitespace-pre-wrap rounded-md border border-line bg-panel p-3 text-xs leading-5 text-mist">
-              {`Anodet — ${session.shop}\nOpen ${typeof window !== "undefined" ? window.location.origin : ""}\nSign in with your own name. Ask the lead for the shop passphrase.`}
-            </pre>
-            <button type="button" onClick={() => void onCopyInvite()} className="mt-4 rounded-md bg-amber px-3 py-2 text-sm font-medium text-ink">
-              {inviteCopied ? "Copied" : "Copy invite"}
-            </button>
-            <button type="button" onClick={() => setIsInviteOpen(false)} className="mt-4 ml-3 text-sm text-mist">
-              Close
-            </button>
-          </aside>
-        </div>
-      ) : null}
       <ShopIntake
         open={isShopOpen}
         onClose={() => setIsShopOpen(false)}
@@ -538,16 +357,56 @@ export function CommandCenter() {
         appendMode={appendMode}
         canFit={isLead}
       />
-      <PitchDrawer
-        open={isPitchOpen}
-        onClose={() => setIsPitchOpen(false)}
-        medianLead={fleet.stats.medianLeadTime}
-        lateHit={fleet.stats.lateLifeOutlierRate}
-        healthyAlarm={fleet.stats.healthyOutlierRate}
-        notes={notes}
-      />
     </main>
   )
+}
+
+function MoreActions({
+  isLead,
+  hasShopAssets,
+  canUndoImport,
+  onBringFile,
+  onLaterHours,
+  onRemoveAsset,
+  onChangeStart,
+  onSignOut,
+}: MoreActionsProps) {
+  return (
+    <>
+      {isLead ? (
+        <button type="button" onClick={onBringFile} className="rounded-md border border-line px-3 py-2 text-left text-sm">
+          Bring shop file
+        </button>
+      ) : null}
+      {hasShopAssets ? (
+        <button type="button" onClick={onLaterHours} className="rounded-md border border-line px-3 py-2 text-left text-sm">
+          Later hours
+        </button>
+      ) : null}
+      {canUndoImport ? (
+        <button type="button" onClick={onRemoveAsset} className="rounded-md border border-line px-3 py-2 text-left text-sm text-mist">
+          Undo this import
+        </button>
+      ) : null}
+      <button type="button" onClick={onChangeStart} className="rounded-md border border-line px-3 py-2 text-left text-sm">
+        Change start
+      </button>
+      <button type="button" onClick={onSignOut} className="rounded-md border border-line px-3 py-2 text-left text-sm">
+        Sign out
+      </button>
+    </>
+  )
+}
+
+interface MoreActionsProps {
+  isLead: boolean
+  hasShopAssets: boolean
+  canUndoImport: boolean
+  onBringFile: () => void
+  onLaterHours: () => void
+  onRemoveAsset: () => void
+  onChangeStart: () => void
+  onSignOut: () => void
 }
 
 type DeskTab = "fleet" | "engine" | "case"

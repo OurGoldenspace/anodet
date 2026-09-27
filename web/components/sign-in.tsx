@@ -37,11 +37,7 @@ export function SignIn({ onSignedIn }: SignInProps) {
       <p className="font-mono text-xs uppercase tracking-[0.18em] text-amber">Anodet</p>
       <h1 className="mt-3 text-2xl">Sign in to the shop</h1>
       <p className="mt-3 text-sm leading-6 text-foam">
-        Your machines generate data. Your technicians generate knowledge. Anodet connects the two.
-      </p>
-      <p className="mt-2 text-sm leading-6 text-mist">
-        Detect an abnormal window, investigate with the procedure, resolve it, remember the outcome, reuse it on the
-        next matching asset. After sign-in, use the NASA demo fleet or your own shop file.
+        The shop remembers the fix. The next similar job reuses it.
       </p>
       <form onSubmit={(event) => void onSubmit(event)} className="mt-6 space-y-3">
         <input
