@@ -91,7 +91,7 @@ First boot can take about 90 seconds while FD001 loads.
 |---|---|
 | `PORT` | `3000` |
 | `RAILWAY_DOCKERFILE_PATH` | `web/Dockerfile` |
-| `API_PROXY_URL` | `http://api.railway.internal:8000` |
+| `API_PROXY_URL` | `http://` + **api** service `RAILWAY_PRIVATE_DOMAIN` + `:8000`. Copy the hostname from api Variables. A broken `${{api.RAILWAY_PRIVATE_DOMAIN}}` becomes `http://:8000` and the desk 500s. |
 
 `/backend` is proxied at **runtime**. You do not need a rebuild if you only change `API_PROXY_URL`.
 
