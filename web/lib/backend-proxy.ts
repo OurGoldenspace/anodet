@@ -1,3 +1,4 @@
+import { lookup } from "node:dns/promises"
 import { setDefaultResultOrder } from "node:dns"
 import { NextRequest, NextResponse } from "next/server"
 
@@ -10,7 +11,7 @@ export async function proxyBackend(request: NextRequest, path: string[]) {
     const url = new URL(`${base}/${(path ?? []).join("/")}${request.nextUrl.search}`)
     if (!url.hostname)
       throw new Error("empty host")
-    target = url.toString()
+    target = await resolvePrivateTarget(url)
   } catch {
     return NextResponse.json(
       { detail: "The shop desk is not pointed at the scoring service. Set API_PROXY_URL to http://HOST:8000 using the api service private domain." },
@@ -45,5 +46,17 @@ export async function proxyBackend(request: NextRequest, path: string[]) {
       },
       { status: 502 },
     )
+  }
+}
+
+async function resolvePrivateTarget(url: URL) {
+  if (url.hostname === "127.0.0.1" || url.hostname === "localhost")
+    return url.toString()
+  try {
+    const { address } = await lookup(url.hostname, { family: 6 })
+    const port = url.port || "80"
+    return `http://[${address}]:${port}${url.pathname}${url.search}`
+  } catch {
+    return url.toString()
   }
 }
