@@ -15,7 +15,7 @@ export async function proxyBackend(request: NextRequest, path: string[]) {
 
   let upstream: Response
   try {
-    upstream = await fetch(target, init)
+    upstream = await fetch(target, { ...init, cache: "no-store" })
   } catch {
     return NextResponse.json(
       { detail: "The shop desk could not reach the scoring service. Reload and try again." },
