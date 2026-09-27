@@ -17,7 +17,7 @@ const mono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: "Anodet",
-  description: "Reviewed maintenance cases. Evidence, the manual, and a technician’s decision the next asset can reuse.",
+  description: "Your machines generate data. Your technicians generate knowledge. Anodet connects the two.",
 }
 
 export default function RootLayout({ children }: RootLayoutProps) {

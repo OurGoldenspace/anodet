@@ -22,10 +22,15 @@ export function PitchDrawer({ open, onClose, medianLead, lateHit, healthyAlarm, 
           </button>
         </div>
 
-        <p className="mt-4 text-sm leading-6">
+        <p className="mt-4 text-sm leading-6 text-foam">
+          Your machines generate data. Your technicians generate knowledge. Anodet connects the two.
+        </p>
+        <p className="mt-3 text-sm leading-6 text-mist">
           The last cheap-check order dies with whoever was on the last job. The next asset with the same
-          signature starts from the expensive manual again. Anodet turns evidence, that manual, and a
-          technician’s decision into a case the next machine can reuse.
+          signature starts from the expensive manual again. Anodet stores the case so the shop can reuse it.
+        </p>
+        <p className="mt-3 font-mono text-xs uppercase tracking-[0.12em] text-amber">
+          Detect → Investigate → Resolve → Remember → Reuse
         </p>
 
         <h3 className="mt-6 text-sm font-medium text-foam">Who pays first</h3>
@@ -36,10 +41,19 @@ export function PitchDrawer({ open, onClose, medianLead, lateHit, healthyAlarm, 
 
         <h3 className="mt-6 text-sm font-medium text-foam">Why it is defendable</h3>
         <ul className="mt-2 space-y-2 text-sm leading-6 text-mist">
-          <li>Isolation Forest is fit only on the healthy window. Later cycles are scored, never used to train.</li>
-          <li>Grok-4 may draft a cheaper order. The server rejects any step that is not in the manual, names a sensor that did not move, or invents a part.</li>
-          <li>A shop file is mapped, then fit on the healthy rows that shop marked. NASA is the sample, not the product.</li>
-          <li>The moat is the library of reviewed fixes. The OEM manual stays underneath, unchanged.</li>
+          <li>
+            The moat is organization-specific history: reviewed cases, procedures, machine context, and outcomes. The
+            OEM manual stays underneath, unchanged.
+          </li>
+          <li>
+            Isolation Forest only finds the abnormal window. It learns the healthy hours the shop marked. The model
+            is not the product.
+          </li>
+          <li>
+            Grok-4 may draft a cheaper order. The server rejects any step that is not in the manual, names a sensor
+            that did not move, or invents a part.
+          </li>
+          <li>NASA C-MAPSS FD001 is the labeled demo fleet. A shop file is the buyer path.</li>
         </ul>
 
         <h3 className="mt-6 text-sm font-medium text-foam">If they ask about live data</h3>
@@ -94,7 +108,7 @@ const SCRIPT = [
   "Open Engine 31. No reviewed fix. The manual books a borescope first.",
   "Ask Grok for a cheaper order. The server checks it. Edit and save.",
   "Open Engine 74. Same signature in words. Shop memory leads. The manual is unchanged.",
-  "Or bring data/shop/marine-diesel-sample.csv and paste a diesel procedure. Same three blocks.",
+  "Or bring data/demo/marine-diesel-sample.csv and paste a diesel procedure. Same three blocks.",
 ]
 
 interface PitchDrawerProps {

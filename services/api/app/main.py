@@ -1,22 +1,36 @@
 from __future__ import annotations
 
+import logging
 import os
 from contextlib import asynccontextmanager
 from typing import Literal
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from app.auth import SHOP_NAME, allow_summary, passphrase_hint, require_member, sign_in
+from app.auth import (
+    SHOP_NAME,
+    allow_sign_in,
+    allow_summary,
+    demo_tools_enabled,
+    passphrase_hint,
+    require_lead,
+    require_member,
+    sign_in,
+)
 from app.cases import attach_recall, build_case, reset_memory, save_case, seed_demo
 from app.draft import draft_procedure
 from app.explain import configured, explain_summary
 from app.detect import Fleet, drop_imported_unit, engine_detail, import_cycles, load_fleet, refresh_summaries
-from app.manual import SECTIONS, save_shop_procedure, section_for, update_section
+from app.limits import CSV_MAX_CHARS
+from app.manual import SECTIONS, save_shop_procedure, update_section
 from app.shop_intake import append_shop_hours, import_shop_history, parse_manual, peek_history
 from app.store import (
     shop_id,
+    connect,
     clear_all_fixes,
     ensure_shop_manual,
     init_db,
@@ -27,7 +41,6 @@ from app.store import (
     list_shop_imports,
     mark_removed_unit,
     list_tester_notes,
-    save_imported_cycles,
     save_shop_append,
     save_shop_import,
     save_tester_note,
@@ -36,6 +49,8 @@ from app.store import (
 )
 
 fleet: Fleet | None = None
+logger = logging.getLogger("anodet")
+logging.basicConfig(level=logging.INFO, format="%(levelname)s anodet %(message)s")
 
 
 @asynccontextmanager
@@ -49,7 +64,7 @@ async def lifespan(_app: FastAPI):
         try:
             import_cycles(fleet, raw)
         except ValueError as error:
-            print(f"skipped stored import: {error}")
+            logger.warning("skipped stored import")
     removed = list_removed_units()
     for raw, mapping, healthy_limit, healthy_from, unit_ids in list_shop_imports():
         if unit_ids and all(unit_id in removed for unit_id in unit_ids):
@@ -57,7 +72,7 @@ async def lifespan(_app: FastAPI):
         try:
             import_shop_history(fleet, raw, mapping, healthy_limit, healthy_from)
         except ValueError as error:
-            print(f"skipped shop import: {error}")
+            logger.warning("skipped shop import")
     for unit_id in removed:
         if unit_id in fleet.engines:
             del fleet.engines[unit_id]
@@ -67,15 +82,14 @@ async def lifespan(_app: FastAPI):
         try:
             append_shop_hours(fleet, raw, mapping, unit_id)
         except ValueError as error:
-            print(f"skipped shop append: {error}")
+            logger.warning("skipped shop append")
     refresh_summaries(fleet)
     attach_recall(fleet)
-    print(
-        "Anodet ready",
-        fleet.stats,
-        "recommended",
+    logger.info(
+        "ready shop=%s engines=%s recommended=%s summary=%s",
+        shop_id(),
+        fleet.stats.get("engines"),
         fleet.recommended_unit_id,
-        "summary",
         "xai" if configured() else "template",
     )
     yield
@@ -90,8 +104,8 @@ app = FastAPI(title="Anodet", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_origins(),
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 
@@ -145,14 +159,14 @@ class ShopMapping(BaseModel):
 
 
 class ShopImportRequest(BaseModel):
-    csv: str = Field(min_length=1, max_length=2_000_000)
+    csv: str = Field(min_length=1, max_length=CSV_MAX_CHARS)
     mapping: ShopMapping
     healthyFrom: int = Field(default=1, ge=1, le=2000)
     healthyLimit: int = Field(default=20, ge=8, le=2000)
 
 
 class ShopAppendRequest(BaseModel):
-    csv: str = Field(min_length=1, max_length=2_000_000)
+    csv: str = Field(min_length=1, max_length=CSV_MAX_CHARS)
     mapping: ShopMapping
     unitId: int | None = None
 
@@ -163,7 +177,7 @@ class DraftRequest(BaseModel):
 
 
 class ImportRequest(BaseModel):
-    csv: str = Field(min_length=1, max_length=2_000_000)
+    csv: str = Field(min_length=1, max_length=CSV_MAX_CHARS)
 
 
 class ExplainMark(BaseModel):
@@ -192,8 +206,13 @@ class ExplainRequest(BaseModel):
 
 def require_fleet() -> Fleet:
     if fleet is None:
-        raise HTTPException(status_code=503, detail="Fleet model is still loading.")
+        raise HTTPException(status_code=503, detail="The fleet model is still loading. Wait a moment and refresh.")
     return fleet
+
+
+def require_demo_tools() -> None:
+    if not demo_tools_enabled():
+        raise HTTPException(status_code=403, detail="Demo tools are off on this shop.")
 
 
 def fleet_payload(loaded: Fleet) -> dict[str, object]:
@@ -212,21 +231,69 @@ def fleet_payload(loaded: Fleet) -> dict[str, object]:
     }
 
 
+@app.exception_handler(RequestValidationError)
+async def invalid_request(_request: Request, _error: RequestValidationError) -> JSONResponse:
+    return JSONResponse(
+        status_code=400,
+        content={"detail": "That request is missing a required field or uses the wrong format."},
+    )
+
+
+@app.exception_handler(Exception)
+async def unexpected_error(_request: Request, error: Exception) -> JSONResponse:
+    if isinstance(error, HTTPException):
+        raise error
+    logger.exception("unhandled request")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "The shop desk hit an unexpected error. Reload and try the last step again."},
+    )
+
+
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def health() -> dict[str, object]:
+    database = "ok"
+    try:
+        with connect() as connection:
+            connection.execute("SELECT 1")
+    except Exception:
+        database = "error"
+        logger.exception("health database check failed")
+    model = "ok" if fleet is not None else "loading"
+    ready = database == "ok" and fleet is not None
+    payload = {
+        "status": "ok" if ready else "starting",
+        "database": database,
+        "model": model,
+        "shopId": shop_id(),
+        "demoTools": demo_tools_enabled(),
+    }
+    if not ready:
+        raise HTTPException(status_code=503, detail=payload)
+    return payload
 
 
 @app.get("/shop")
 def shop() -> dict[str, object]:
-    return {"name": SHOP_NAME, "shopId": shop_id(), "passphraseHint": passphrase_hint()}
+    return {
+        "name": SHOP_NAME,
+        "shopId": shop_id(),
+        "passphraseHint": passphrase_hint(),
+        "demoTools": demo_tools_enabled(),
+    }
 
 
 @app.post("/session")
-def post_session(body: SessionRequest) -> dict[str, object]:
+def post_session(body: SessionRequest, request: Request) -> dict[str, object]:
+    bucket = request.client.host if request.client else body.name
+    if not allow_sign_in(bucket):
+        raise HTTPException(status_code=429, detail="Too many sign-in attempts. Wait a few minutes and try again.")
     try:
-        return sign_in(body.name, body.passphrase)
+        session = sign_in(body.name, body.passphrase)
+        logger.info("signed in shop=%s", shop_id())
+        return session
     except ValueError as error:
+        logger.warning("sign-in rejected")
         raise HTTPException(status_code=401, detail=str(error)) from error
 
 
@@ -264,7 +331,7 @@ def get_engine(unit_id: int, _member: dict[str, object] = Depends(require_member
 
 
 @app.delete("/engines/{unit_id}")
-def delete_engine(unit_id: int, _member: dict[str, object] = Depends(require_member)) -> dict[str, object]:
+def delete_engine(unit_id: int, _member: dict[str, object] = Depends(require_lead)) -> dict[str, object]:
     loaded = require_fleet()
     try:
         drop_imported_unit(loaded, unit_id)
@@ -277,15 +344,8 @@ def delete_engine(unit_id: int, _member: dict[str, object] = Depends(require_mem
     return fleet_payload(loaded)
 
 
-@app.get("/manual/{pattern}")
-def get_manual_section(pattern: str, _member: dict[str, object] = Depends(require_member)) -> dict[str, object]:
-    if pattern not in SECTIONS:
-        raise HTTPException(status_code=404, detail="That manual section is not on this fleet.")
-    return section_for(pattern)
-
-
 @app.put("/manual")
-def put_manual(body: ManualUpdateRequest, _member: dict[str, object] = Depends(require_member)) -> dict[str, object]:
+def put_manual(body: ManualUpdateRequest, _member: dict[str, object] = Depends(require_lead)) -> dict[str, object]:
     try:
         return update_section(body.pattern, body.steps)
     except ValueError as error:
@@ -306,7 +366,7 @@ def post_manual_parse(body: ManualParseRequest, member: dict[str, object] = Depe
 
 
 @app.post("/manual/shop")
-def post_shop_manual(body: ShopManualRequest, _member: dict[str, object] = Depends(require_member)) -> dict[str, object]:
+def post_shop_manual(body: ShopManualRequest, _member: dict[str, object] = Depends(require_lead)) -> dict[str, object]:
     try:
         return save_shop_procedure(body.title, body.id, body.steps)
     except ValueError as error:
@@ -322,7 +382,7 @@ def post_preview(body: ImportRequest, _member: dict[str, object] = Depends(requi
 
 
 @app.post("/assets/shop")
-def post_shop_import(body: ShopImportRequest, _member: dict[str, object] = Depends(require_member)) -> dict[str, object]:
+def post_shop_import(body: ShopImportRequest, _member: dict[str, object] = Depends(require_lead)) -> dict[str, object]:
     loaded = require_fleet()
     mapping = body.mapping.model_dump()
     try:
@@ -345,18 +405,6 @@ def post_shop_append(body: ShopAppendRequest, _member: dict[str, object] = Depen
     save_shop_append(body.csv, mapping, body.unitId)
     attach_recall(loaded)
     return {"updatedUnitIds": updated, "fleet": fleet_payload(loaded)}
-
-
-@app.post("/assets/import")
-def post_import(body: ImportRequest, _member: dict[str, object] = Depends(require_member)) -> dict[str, object]:
-    loaded = require_fleet()
-    try:
-        imported = import_cycles(loaded, body.csv)
-    except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error)) from error
-    save_imported_cycles(body.csv)
-    attach_recall(loaded)
-    return {"importedUnitIds": imported, "fleet": fleet_payload(loaded)}
 
 
 @app.get("/cases/{unit_id}")
@@ -444,21 +492,28 @@ def post_case(body: CaseSaveRequest, member: dict[str, object] = Depends(require
 
 
 @app.post("/demo/seed")
-def post_demo_seed(member: dict[str, object] = Depends(require_member)) -> dict[str, object]:
+def post_demo_seed(member: dict[str, object] = Depends(require_lead)) -> dict[str, object]:
+    require_demo_tools()
     loaded = require_fleet()
     try:
-        return seed_demo(loaded, loaded.recommended_unit_id, str(member["name"]))
+        seeded = seed_demo(loaded, loaded.recommended_unit_id, str(member["name"]))
+        logger.info("demo seed shop=%s", shop_id())
+        return seeded
     except KeyError as error:
-        raise HTTPException(status_code=404, detail="Demo engine is missing.") from error
+        raise HTTPException(status_code=404, detail="The NASA demo engine is missing.") from error
 
 
 @app.post("/demo/reset")
-def post_demo_reset(_member: dict[str, object] = Depends(require_member)) -> dict[str, str]:
+def post_demo_reset(_member: dict[str, object] = Depends(require_lead)) -> dict[str, str]:
+    require_demo_tools()
     reset_memory()
+    logger.info("demo reset shop=%s", shop_id())
     return {"status": "cleared"}
 
 
 @app.post("/demo/empty")
-def post_demo_empty(_member: dict[str, object] = Depends(require_member)) -> dict[str, str]:
+def post_demo_empty(_member: dict[str, object] = Depends(require_lead)) -> dict[str, str]:
+    require_demo_tools()
     clear_all_fixes()
+    logger.info("demo emptied shop=%s", shop_id())
     return {"status": "empty"}

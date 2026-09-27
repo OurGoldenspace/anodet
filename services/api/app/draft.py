@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 
@@ -27,6 +28,7 @@ ALLOWED_WORDS = {
     "come", "cheaper", "cheapest", "avoid", "need", "rule", "cost", "order", "early", "earlier",
 }
 
+logger = logging.getLogger("anodet")
 _CACHE: dict[str, dict[str, object]] = {}
 
 
@@ -60,18 +62,18 @@ def draft_procedure(case: dict[str, object]) -> dict[str, object]:
             raw = _complete(case, manual_steps, feedback)
             result = validate_draft(raw, case, manual_steps)
         except DraftRejected as error:
-            print(f"draft rejected: {error}")
+            logger.info("draft rejected: %s", error)
             rejections.append(str(error))
             feedback = str(error)
             continue
         except httpx.HTTPStatusError as error:
-            print(f"draft failed status={error.response.status_code}")
+            logger.warning("draft failed status=%s", error.response.status_code)
             return {**fallback, "trace": "The model call failed. The manual order stays."}
         except httpx.TimeoutException:
-            print("draft failed timeout")
+            logger.warning("draft failed timeout")
             return {**fallback, "trace": "The model timed out. The manual order stays."}
         except (httpx.HTTPError, ValueError) as error:
-            print(f"draft failed {type(error).__name__}")
+            logger.warning("draft failed %s", type(error).__name__)
             return {**fallback, "trace": "The model call failed. The manual order stays."}
         checks = f"{len(manual_steps)} steps trace to manual {manual['id']}. Sensors only from the evidence. No new parts or actions."
         prefix = f"Rejected once: {rejections[0]} " if rejections else ""

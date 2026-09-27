@@ -11,7 +11,7 @@ from app.shop_intake import (
     check_healthy_window,
 )
 
-DIESEL = Path(__file__).resolve().parents[3] / "data" / "shop" / "marine-diesel-sample.csv"
+DIESEL = Path(__file__).resolve().parents[3] / "data" / "demo" / "marine-diesel-sample.csv"
 
 
 class ShopIntakeTest(unittest.TestCase):

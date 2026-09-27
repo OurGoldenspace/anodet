@@ -54,6 +54,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     try {
       const parsed = JSON.parse(detail) as { detail?: unknown }
       if (typeof parsed.detail === "string") message = parsed.detail
+      else if (response.status === 429) message = "Too many attempts. Wait a minute and try again."
     } catch {
       message = detail
     }
@@ -195,13 +196,6 @@ export function saveShopManual(manual: ParsedManual) {
   return request<ManualSection>("/backend/manual/shop", {
     method: "POST",
     body: JSON.stringify({ title: manual.title, id: manual.id, steps: manual.steps }),
-  })
-}
-
-export function importCycles(csv: string) {
-  return request<{ importedUnitIds: number[]; fleet: FleetResponse }>("/backend/assets/import", {
-    method: "POST",
-    body: JSON.stringify({ csv }),
   })
 }
 

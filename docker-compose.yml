@@ -6,6 +6,7 @@ services:
     expose:
       - "8000"
     environment:
+      PORT: "8000"
       ANODET_DB: /var/lib/anodet/anodet.db
       ANODET_DATA: /data/cmapss/train_FD001.txt
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
@@ -13,8 +14,18 @@ services:
       SHOP_NAME: ${SHOP_NAME:-Sample fleet}
       SHOP_PASSPHRASE: ${SHOP_PASSPHRASE:-sample-shop}
       SHOP_PASSPHRASE_HINT: ${SHOP_PASSPHRASE_HINT:-0}
+      DEMO_TOOLS: ${DEMO_TOOLS:-1}
+      SHOP_LEAD: ${SHOP_LEAD:-}
+      XAI_API_KEY: ${XAI_API_KEY:-}
+      XAI_MODEL: ${XAI_MODEL:-grok-4}
     volumes:
       - shop-memory:/var/lib/anodet
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 20s
+      timeout: 5s
+      retries: 8
+      start_period: 90s
 
   web:
     build:
@@ -24,8 +35,12 @@ services:
         API_PROXY_URL: http://api:8000
     ports:
       - "3000:3000"
+    environment:
+      PORT: "3000"
+      API_PROXY_URL: http://api:8000
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
 volumes:
   shop-memory:

@@ -16,6 +16,10 @@ def shop_id() -> str:
     return value or "sample"
 
 
+def shop_lead_name() -> str:
+    return os.environ.get("SHOP_LEAD", "").strip()
+
+
 def database_path() -> Path:
     override = os.environ.get("ANODET_DB")
     if override:
@@ -82,6 +86,8 @@ def init_db() -> None:
         member_columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(members)")}
         if "expires_at" not in member_columns:
             connection.execute("ALTER TABLE members ADD COLUMN expires_at TEXT")
+        if "role" not in member_columns:
+            connection.execute("ALTER TABLE members ADD COLUMN role TEXT NOT NULL DEFAULT 'technician'")
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS imported_cycles (
@@ -147,6 +153,11 @@ def init_db() -> None:
             _ensure_shop_column(connection, table)
         _migrate_manual_pk(connection)
         _migrate_tester_notes_pk(connection)
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS reviewed_fixes_shop_id ON reviewed_fixes (shop_id, id)"
+        )
+        connection.execute("CREATE INDEX IF NOT EXISTS members_shop_token ON members (shop_id, token)")
+        connection.execute("CREATE INDEX IF NOT EXISTS shop_imports_shop_id ON shop_imports (shop_id)")
 
 
 def seed_manual(sections: dict[str, dict[str, object]]) -> None:
@@ -476,26 +487,40 @@ def open_member(name: str) -> dict[str, object]:
     token = secrets.token_urlsafe(32)
     with _LOCK, connect() as connection:
         row = connection.execute(
-            "SELECT id, name FROM members WHERE shop_id = ? AND lower(name) = lower(?)",
+            "SELECT id, name, role FROM members WHERE shop_id = ? AND lower(name) = lower(?)",
             (shop_id(), cleaned),
         ).fetchone()
         if row is not None:
+            role = _member_role(connection, cleaned, str(row["role"] or "technician"))
             connection.execute(
-                "UPDATE members SET token = ?, expires_at = ? WHERE id = ? AND shop_id = ?",
-                (token, expires_at, int(row["id"]), shop_id()),
+                "UPDATE members SET token = ?, expires_at = ?, role = ? WHERE id = ? AND shop_id = ?",
+                (token, expires_at, role, int(row["id"]), shop_id()),
             )
-            return {"id": int(row["id"]), "name": str(row["name"]), "token": token, "shopId": shop_id()}
+            return {
+                "id": int(row["id"]),
+                "name": str(row["name"]),
+                "token": token,
+                "shopId": shop_id(),
+                "role": role,
+            }
+        role = _member_role(connection, cleaned, None)
         cursor = connection.execute(
-            "INSERT INTO members (shop_id, created_at, name, token, expires_at) VALUES (?, ?, ?, ?, ?)",
-            (shop_id(), created_at, cleaned, token, expires_at),
+            "INSERT INTO members (shop_id, created_at, name, token, expires_at, role) VALUES (?, ?, ?, ?, ?, ?)",
+            (shop_id(), created_at, cleaned, token, expires_at, role),
         )
-        return {"id": int(cursor.lastrowid), "name": cleaned, "token": token, "shopId": shop_id()}
+        return {
+            "id": int(cursor.lastrowid),
+            "name": cleaned,
+            "token": token,
+            "shopId": shop_id(),
+            "role": role,
+        }
 
 
 def member_from_token(token: str) -> dict[str, object] | None:
     with _LOCK, connect() as connection:
         row = connection.execute(
-            "SELECT id, name, token, expires_at FROM members WHERE token = ? AND shop_id = ?",
+            "SELECT id, name, token, expires_at, role FROM members WHERE token = ? AND shop_id = ?",
             (token, shop_id()),
         ).fetchone()
     if row is None or row["expires_at"] is None:
@@ -503,7 +528,34 @@ def member_from_token(token: str) -> dict[str, object] | None:
     expires_at = datetime.fromisoformat(str(row["expires_at"]))
     if expires_at < datetime.now(timezone.utc):
         return None
-    return {"id": int(row["id"]), "name": str(row["name"]), "token": str(row["token"]), "shopId": shop_id()}
+    role = str(row["role"] or "technician")
+    if role not in {"lead", "technician"}:
+        role = "technician"
+    return {
+        "id": int(row["id"]),
+        "name": str(row["name"]),
+        "token": str(row["token"]),
+        "shopId": shop_id(),
+        "role": role,
+    }
+
+
+def _member_role(connection: sqlite3.Connection, cleaned: str, current: str | None) -> str:
+    named = shop_lead_name()
+    leads = connection.execute(
+        "SELECT COUNT(*) FROM members WHERE shop_id = ? AND role = 'lead'",
+        (shop_id(),),
+    ).fetchone()
+    lead_count = 0 if leads is None else int(leads[0])
+    if named:
+        if cleaned.lower() == named.lower():
+            return "lead"
+        return "lead" if current == "lead" else "technician"
+    if lead_count == 0:
+        return "lead"
+    if current in {"lead", "technician"}:
+        return current
+    return "technician"
 
 
 def save_imported_cycles(raw: str) -> None:

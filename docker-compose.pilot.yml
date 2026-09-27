@@ -1,0 +1,33 @@
+# Pilot overlay. Requires ANODET_HOST and SHOP_PASSPHRASE in the environment.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.pilot.yml up --build
+#
+# Caddy terminates TLS. The API stays unpublished.
+
+services:
+  api:
+    environment:
+      DEMO_TOOLS: "0"
+      SHOP_PASSPHRASE_HINT: "0"
+      SHOP_PASSPHRASE: ${SHOP_PASSPHRASE:?set SHOP_PASSPHRASE}
+      SHOP_ID: ${SHOP_ID:-pilot}
+      SHOP_NAME: ${SHOP_NAME:-Pilot shop}
+      SHOP_LEAD: ${SHOP_LEAD:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:?set CORS_ORIGINS to https://your-host}
+
+  caddy:
+    image: caddy:2.8-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      ANODET_HOST: ${ANODET_HOST:?set ANODET_HOST to a hostname you own}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - web
+
+volumes:
+  caddy-data:
+  caddy-config:

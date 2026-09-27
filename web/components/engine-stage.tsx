@@ -42,13 +42,18 @@ export function EngineStage({ engine, cycle, onCycleChange }: EngineStageProps) 
     <section className="scroll-thin h-full min-h-0 overflow-y-auto px-5 py-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-mist">Engine</p>
+          <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-mist">Investigate · engine</p>
           <h2 className="mt-1 text-2xl font-medium">ENG {formatUnit(engine.unitId)}</h2>
           <p className="mt-1 text-sm text-mist">
             {PATTERN_LABEL[engine.pattern]} · warning at {tick} {engine.warningCycle} · {engine.leadTime} {tick}s of lead
             time
           </p>
           {engine.trainedOn ? <p className="mt-1 text-xs text-mist">Baseline: {engine.trainedOn}</p> : null}
+          <p className="mt-1 text-xs text-mist">
+            {engine.origin === "import"
+              ? "Shop file · your hours"
+              : "NASA C-MAPSS FD001 demo fleet · not a customer"}
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <JumpButton label="Warning" onClick={() => jump(engine.warningCycle)} />

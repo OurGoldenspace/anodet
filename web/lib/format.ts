@@ -2,10 +2,6 @@ export function formatUnit(unitId: number) {
   return unitId.toString().padStart(2, "0")
 }
 
-export function formatShare(value: number) {
-  return `${Math.round(value * 100)}%`
-}
-
 export const STATUS_LABEL: Record<string, string> = {
   early: "Early warning",
   actionable: "Actionable",

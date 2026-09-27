@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
@@ -11,6 +12,7 @@ load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=True)
 XAI_URL = "https://api.x.ai/v1/chat/completions"
 MODEL = os.environ.get("XAI_MODEL", "grok-4")
 TIMEOUT_SECONDS = 15.0
+logger = logging.getLogger("anodet")
 _CACHE: dict[str, str] = {}
 
 
@@ -29,13 +31,13 @@ def explain_summary(facts: dict[str, object], template: str) -> dict[str, object
     try:
         text = _complete(facts, template)
     except httpx.HTTPStatusError as error:
-        print(f"summary failed status={error.response.status_code}")
+        logger.warning("summary failed status=%s", error.response.status_code)
         return {"summary": template, "provider": "template", "model": None, "trace": trace}
     except httpx.TimeoutException:
-        print("summary failed timeout")
+        logger.warning("summary failed timeout")
         return {"summary": template, "provider": "template", "model": None, "trace": trace}
     except (httpx.HTTPError, TimeoutError, ValueError) as error:
-        print(f"summary failed {type(error).__name__}")
+        logger.warning("summary failed %s", type(error).__name__)
         return {"summary": template, "provider": "template", "model": None, "trace": trace}
     if not text:
         return {"summary": template, "provider": "template", "model": None, "trace": trace}

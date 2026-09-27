@@ -12,6 +12,7 @@ ENV API_PROXY_URL=$API_PROXY_URL
 
 RUN npm run build
 
+ENV PORT=3000
 EXPOSE 3000
 
-CMD ["npx", "next", "start", "-H", "0.0.0.0", "-p", "3000"]
+CMD ["sh", "-c", "npx next start -H 0.0.0.0 -p ${PORT:-3000}"]

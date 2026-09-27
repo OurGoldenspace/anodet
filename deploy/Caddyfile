@@ -1,0 +1,5 @@
+# Set ANODET_HOST to the hostname you already own. Do not commit a made-up domain.
+{$ANODET_HOST} {
+	encode gzip
+	reverse_proxy web:3000
+}

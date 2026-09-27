@@ -11,7 +11,15 @@ const DIESEL_MANUAL = `S.1 Jacket-water and oil check — marine diesel
 3. Confirm oil pressure has dropped with both temperatures.
 4. Open the case only if oil, exhaust, and pressure agree.`
 
-export function ShopIntake({ open, onClose, onImported, selectedUnitId, hasShopAssets }: ShopIntakeProps) {
+export function ShopIntake({
+  open,
+  onClose,
+  onImported,
+  selectedUnitId,
+  hasShopAssets,
+  appendMode = false,
+  canFit = true,
+}: ShopIntakeProps) {
   const [fileName, setFileName] = useState<string | null>(null)
   const [raw, setRaw] = useState("")
   const [preview, setPreview] = useState<HistoryPreview | null>(null)
@@ -22,7 +30,7 @@ export function ShopIntake({ open, onClose, onImported, selectedUnitId, hasShopA
   const [parsed, setParsed] = useState<ParsedManual | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
-  const [appendOnly, setAppendOnly] = useState(false)
+  const [appendOnly, setAppendOnly] = useState(appendMode)
 
   if (!open) return null
 
@@ -32,7 +40,7 @@ export function ShopIntake({ open, onClose, onImported, selectedUnitId, hasShopA
     setFileName(file.name)
     setRaw(text)
     setError(null)
-    setBusy("Grok is reading the columns…")
+        setBusy("Reading the columns…")
     try {
       const next = await previewHistory(text)
       setPreview(next)
@@ -47,7 +55,7 @@ export function ShopIntake({ open, onClose, onImported, selectedUnitId, hasShopA
 
   async function onParseManual() {
     setError(null)
-    setBusy("Grok is splitting the procedure. The server will keep only text from the page…")
+    setBusy("Splitting the procedure. The server will keep only text from the page…")
     try {
       setParsed(await parseManual(manualText))
     } catch (caught) {
@@ -60,10 +68,11 @@ export function ShopIntake({ open, onClose, onImported, selectedUnitId, hasShopA
   async function onImport() {
     if (!preview) return
     setError(null)
-    setBusy(appendOnly ? "Scoring later hours. The healthy window is not refit…" : "Fitting Isolation Forest on the healthy hours only…")
+    setBusy(appendOnly ? "Scoring later hours. The healthy window is not refit…" : "Fitting the detector on the healthy hours only…")
     try {
-      if (parsed) await saveShopManual(parsed)
-      if (appendOnly) {
+      const laterHours = appendMode || !canFit || appendOnly
+      if (parsed && !laterHours) await saveShopManual(parsed)
+      if (laterHours) {
         const appended = await appendShopHours(raw, preview.mapping, selectedUnitId)
         setNote(`Later hours added to asset ${appended.updatedUnitIds.join(", ")}. Isolation Forest was not refit.`)
         onImported(appended.fleet, appended.updatedUnitIds[0] ?? selectedUnitId)
@@ -85,23 +94,29 @@ export function ShopIntake({ open, onClose, onImported, selectedUnitId, hasShopA
       <aside
         role="dialog"
         aria-modal="true"
-        aria-label="Bring a shop file"
+        aria-label={appendMode || !canFit ? "Score later hours" : "Bring a shop file"}
         className="scroll-thin absolute right-0 top-0 h-dvh w-full max-w-lg overflow-y-auto border-l border-line bg-ink p-6 pb-16"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-mist">Shop intake</p>
-            <h2 className="mt-1 text-xl">Bring a shop file</h2>
+            <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-mist">
+              {appendMode || !canFit ? "Live hours" : "Shop intake"}
+            </p>
+            <h2 className="mt-1 text-xl">{appendMode || !canFit ? "Score later hours" : "Bring a shop file"}</h2>
           </div>
           <button type="button" onClick={onClose} className="text-sm text-mist">
             Close
           </button>
         </div>
         <p className="mt-3 text-sm leading-6 text-mist">
-          Drop a history file and paste the procedure you actually use. Grok maps columns and splits the page.
-          Isolation Forest is fit only on the healthy window you mark. Change start goes back to the NASA sample.
+          {appendMode || !canFit
+            ? "Drop only the new hours. The healthy window already marked is not refit. This is the live path."
+            : "Drop a history file and paste the procedure you actually use. Mark the hours that were normal. The detector only learns that window. Change start goes back to the NASA demo."}
         </p>
+        {!canFit && !hasShopAssets ? (
+          <p className="mt-3 text-sm leading-6 text-amber">Ask the shop lead to Fit the first history file.</p>
+        ) : null}
 
         <label className="mt-5 block cursor-pointer rounded-md border border-line px-3 py-2 text-sm">
           {fileName ?? "Choose CSV or NASA text"}
@@ -116,7 +131,7 @@ export function ShopIntake({ open, onClose, onImported, selectedUnitId, hasShopA
           />
         </label>
         <p className="mt-2 text-xs text-mist">
-          Sample for the pitch: <span className="font-mono">data/shop/marine-diesel-sample.csv</span>
+          Sample for the pitch: <span className="font-mono">data/demo/marine-diesel-sample.csv</span>
         </p>
 
         {preview ? (
@@ -138,77 +153,87 @@ export function ShopIntake({ open, onClose, onImported, selectedUnitId, hasShopA
             ) : (
               <p className="mt-2 text-sm">This file uses the sample-fleet column order.</p>
             )}
-            <p className="mt-3 text-sm">Hours that were normal (cycles if that is how the file is numbered)</p>
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <label className="text-sm">
-                From
-                <input
-                  type="number"
-                  min={1}
-                  max={2000}
-                  value={healthyFrom}
-                  onChange={(event) => setHealthyFrom(Number(event.target.value))}
-                  className="mt-1 w-full rounded-md border border-line bg-ink px-3 py-2 text-sm outline-none focus:border-amber"
-                />
-              </label>
-              <label className="text-sm">
-                Through
-                <input
-                  type="number"
-                  min={8}
-                  max={2000}
-                  value={healthyLimit}
-                  onChange={(event) => setHealthyLimit(Number(event.target.value))}
-                  className="mt-1 w-full rounded-md border border-line bg-ink px-3 py-2 text-sm outline-none focus:border-amber"
-                />
-              </label>
-            </div>
-            <p className="mt-2 text-xs text-mist">
-              Later rows are scored, never used to train. Live readings later use this same window.
-            </p>
-            {hasShopAssets ? (
-              <label className="mt-3 flex items-start gap-2 text-sm">
-                <input type="checkbox" checked={appendOnly} onChange={(event) => setAppendOnly(event.target.checked)} className="mt-1" />
-                These are later hours. Do not retrain. Score them against the healthy window already marked.
-              </label>
-            ) : null}
+            {appendMode || !canFit ? (
+              <p className="mt-3 text-xs text-mist">Healthy window stays locked. Later hours are scored only.</p>
+            ) : (
+              <>
+                <p className="mt-3 text-sm">Hours that were normal (cycles if that is how the file is numbered)</p>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <label className="text-sm">
+                    From
+                    <input
+                      type="number"
+                      min={1}
+                      max={2000}
+                      value={healthyFrom}
+                      onChange={(event) => setHealthyFrom(Number(event.target.value))}
+                      className="mt-1 w-full rounded-md border border-line bg-ink px-3 py-2 text-sm outline-none focus:border-amber"
+                    />
+                  </label>
+                  <label className="text-sm">
+                    Through
+                    <input
+                      type="number"
+                      min={8}
+                      max={2000}
+                      value={healthyLimit}
+                      onChange={(event) => setHealthyLimit(Number(event.target.value))}
+                      className="mt-1 w-full rounded-md border border-line bg-ink px-3 py-2 text-sm outline-none focus:border-amber"
+                    />
+                  </label>
+                </div>
+                <p className="mt-2 text-xs text-mist">
+                  Later rows are scored, never used to train. Live readings later use this same window.
+                </p>
+                {hasShopAssets ? (
+                  <label className="mt-3 flex items-start gap-2 text-sm">
+                    <input type="checkbox" checked={appendOnly} onChange={(event) => setAppendOnly(event.target.checked)} className="mt-1" />
+                    These are later hours. Do not retrain. Score them against the healthy window already marked.
+                  </label>
+                ) : null}
+              </>
+            )}
           </div>
         ) : null}
 
-        <label className="mt-5 block text-sm">
-          Paste the shop procedure
-          <textarea
-            value={manualText}
-            onChange={(event) => setManualText(event.target.value)}
-            rows={7}
-            className="mt-1 w-full rounded-md border border-line bg-ink px-3 py-2 text-sm outline-none focus:border-amber"
-          />
-        </label>
-        <button type="button" disabled={busy != null} onClick={() => void onParseManual()} className="mt-2 text-sm text-amber">
-          Split with Grok
-        </button>
-        {parsed ? (
-          <ol className="mt-3 space-y-1 text-sm leading-5">
-            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-mist">
-              {parsed.id} · {parsed.title} · {parsed.provider === "xai" ? "Grok" : "Lines"}
-            </p>
-            {parsed.steps.map((step, index) => (
-              <li key={step}>
-                <span className="mr-2 font-mono text-xs text-mist">{index + 1}</span>
-                {step}
-              </li>
-            ))}
-            <p className="text-xs text-mist">{parsed.trace}</p>
-          </ol>
-        ) : null}
+        {appendMode || !canFit ? null : (
+          <>
+            <label className="mt-5 block text-sm">
+              Paste the shop procedure
+              <textarea
+                value={manualText}
+                onChange={(event) => setManualText(event.target.value)}
+                rows={7}
+                className="mt-1 w-full rounded-md border border-line bg-ink px-3 py-2 text-sm outline-none focus:border-amber"
+              />
+            </label>
+            <button type="button" disabled={busy != null} onClick={() => void onParseManual()} className="mt-2 text-sm text-amber">
+              Split with Grok
+            </button>
+            {parsed ? (
+              <ol className="mt-3 space-y-1 text-sm leading-5">
+                <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-mist">
+                  {parsed.id} · {parsed.title} · {parsed.provider === "xai" ? "Grok" : "Lines"}
+                </p>
+                {parsed.steps.map((step, index) => (
+                  <li key={step}>
+                    <span className="mr-2 font-mono text-xs text-mist">{index + 1}</span>
+                    {step}
+                  </li>
+                ))}
+                <p className="text-xs text-mist">{parsed.trace}</p>
+              </ol>
+            ) : null}
+          </>
+        )}
 
         <button
           type="button"
-          disabled={busy != null || !preview}
+          disabled={busy != null || !preview || (!canFit && !hasShopAssets)}
           onClick={() => void onImport()}
           className="mt-5 w-full rounded-md bg-amber px-3 py-2 text-sm font-medium text-ink disabled:opacity-60"
         >
-          {appendOnly ? "Score later hours and open the case" : "Fit on the healthy hours and open the case"}
+          {appendMode || !canFit || appendOnly ? "Score later hours and open the case" : "Fit on the healthy hours and open the case"}
         </button>
         {busy ? <p className="mt-3 text-sm text-amber">{busy}</p> : null}
         {note ? <p className="mt-3 text-sm text-tide">{note}</p> : null}
@@ -224,4 +249,6 @@ interface ShopIntakeProps {
   onImported: (fleet: FleetResponse, unitId: number | null) => void
   selectedUnitId: number | null
   hasShopAssets: boolean
+  appendMode?: boolean
+  canFit?: boolean
 }

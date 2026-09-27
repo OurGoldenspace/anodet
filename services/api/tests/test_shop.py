@@ -40,6 +40,38 @@ class ShopScopeTest(unittest.TestCase):
         os.environ["SHOP_ID"] = "alpha"
         self.assertEqual(list_fixes()[0]["author"], "Pat")
 
+    def test_matching_signature_is_reused(self) -> None:
+        from app.store import best_match, save_fix
+
+        save_fix(
+            unit_id=31,
+            cycle=189,
+            signature=[
+                {"key": "s8", "name": "NRf", "direction": "high"},
+                {"key": "s9", "name": "NRc", "direction": "high"},
+                {"key": "s14", "name": "htBleed", "direction": "high"},
+            ],
+            manual_section="4.2 Hot-section wear",
+            decision="modify",
+            steps=["Read NRf and NRc before a borescope."],
+            cause="Hot-section wear",
+            resolved=True,
+            note="",
+            author="Pat",
+            outcome="worked",
+        )
+        match = best_match(
+            [
+                {"key": "s8", "name": "NRf", "direction": "high"},
+                {"key": "s9", "name": "NRc", "direction": "high"},
+            ],
+            exclude_unit=74,
+        )
+        self.assertIsNotNone(match)
+        assert match is not None
+        self.assertEqual(match[0]["unitId"], 31)
+        self.assertEqual(len(match[1]), 2)
+
     def test_passphrase_hint_is_off_by_default(self) -> None:
         from app.auth import passphrase_hint
 

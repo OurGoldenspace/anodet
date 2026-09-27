@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from io import StringIO
@@ -13,7 +14,9 @@ from sklearn.preprocessing import StandardScaler
 
 from app.detect import Fleet, _build_engine, register_sensor
 from app.explain import MODEL, XAI_URL, configured
+from app.limits import CSV_MAX_CHARS
 
+logger = logging.getLogger("anodet")
 DRAFT_TIMEOUT = 20.0
 UNIT_HINTS = ("unit", "engine", "asset", "machine", "id")
 CYCLE_HINTS = ("cycle", "hour", "hours", "time", "sample", "row", "index")
@@ -49,7 +52,7 @@ def peek_history(raw: str) -> dict[str, object]:
             provider = "xai"
             trace = f"Grok · {MODEL} mapped the columns. Confirm before the model is fit."
         except (httpx.HTTPError, ValueError, TimeoutError) as error:
-            print(f"column map failed {type(error).__name__}")
+            logger.warning("column map failed %s", type(error).__name__)
             trace = "The model did not map the file. The column-name map stays."
     return {
         "kind": "shop",
@@ -81,7 +84,7 @@ def parse_manual(text: str) -> dict[str, object]:
             "trace": f"Grok · {MODEL} split the page. Confirm. Saving does not change an OEM PDF.",
         }
     except (httpx.HTTPError, ValueError, TimeoutError) as error:
-        print(f"manual parse failed {type(error).__name__}")
+        logger.warning("manual parse failed %s", type(error).__name__)
         return {**fallback, "provider": "template", "trace": "The model did not split the page. Numbered lines were kept."}
 
 
@@ -282,7 +285,7 @@ def _read_table(raw: str) -> pd.DataFrame:
     text = raw.strip()
     if not text:
         raise ValueError("The file is empty.")
-    if len(text) > 2_000_000:
+    if len(text) > CSV_MAX_CHARS:
         raise ValueError("Import one asset file at a time.")
     first = text.splitlines()[0]
     separator = "," if "," in first else r"\s+"

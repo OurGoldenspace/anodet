@@ -1,11 +1,11 @@
-name: api
+name: mvp
 
 on:
   push:
   pull_request:
 
 jobs:
-  test:
+  api:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -18,4 +18,51 @@ jobs:
       - name: Install
         run: pip install -r requirements.txt
       - name: Test
-        run: python -m unittest tests/test_shop_intake.py tests/test_draft.py tests/test_shop.py
+        run: python -m unittest discover -s tests -p "test_*.py"
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Build
+        run: npm run build
+
+  e2e:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install API
+        working-directory: services/api
+        run: pip install -r requirements.txt
+      - name: Install web
+        run: npm ci
+      - name: Install Playwright
+        run: npx playwright install --with-deps chromium
+      - name: NASA reuse
+        env:
+          CI: "1"
+          SHOP_PASSPHRASE: sample-shop
+        run: npm run test:e2e

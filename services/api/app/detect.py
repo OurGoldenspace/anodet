@@ -10,6 +10,8 @@ import pandas as pd
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
 
+from app.limits import CSV_MAX_CHARS
+
 HEALTHY_CYCLE_LIMIT = 30
 SMOOTH_WINDOW = 8
 WARNING_HEALTH = 60.0
@@ -478,7 +480,7 @@ def _parse_cycles(raw: str) -> pd.DataFrame:
     text = raw.strip()
     if not text:
         raise ValueError("The file is empty.")
-    if len(text) > 2_000_000:
+    if len(text) > CSV_MAX_CHARS:
         raise ValueError("Import one engine file at a time.")
     first = text.splitlines()[0]
     separator = "," if "," in first else r"\s+"
@@ -534,12 +536,3 @@ def _rolling_mean(values: np.ndarray, window: int) -> np.ndarray:
         count = min(index + 1, window)
         result[index] = running / count
     return result
-
-
-if __name__ == "__main__":
-    fleet = load_fleet()
-    print(fleet.stats)
-    print("recommended", fleet.recommended_unit_id)
-    print("threshold", fleet.threshold)
-    picked = next(item for item in fleet.summaries if item["unitId"] == fleet.recommended_unit_id)
-    print(picked)

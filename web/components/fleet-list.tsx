@@ -11,7 +11,6 @@ export function FleetList({
   query,
   onQueryChange,
   onSelect,
-  expanded = false,
   emptyLabel,
 }: FleetListProps) {
   const selectedRef = useRef<HTMLButtonElement>(null)
@@ -33,7 +32,7 @@ export function FleetList({
     <aside className="flex h-full min-h-0 flex-col overflow-hidden border-b border-line lg:border-b-0 lg:border-r">
       <div className="border-b border-line px-4 py-3">
         <div className="flex items-baseline justify-between">
-          <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-mist">Fleet</p>
+          <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-mist">Detect · fleet</p>
           <p className="font-mono text-[11px] text-mist">{visible.length}</p>
         </div>
         <input
@@ -54,6 +53,7 @@ export function FleetList({
               key={engine.unitId}
               ref={isSelected ? selectedRef : undefined}
               type="button"
+              data-testid={`engine-${engine.unitId}`}
               onClick={() => onSelect(engine.unitId)}
               className={`block w-full border-b border-line px-4 py-3 text-left transition ${
                 isSelected ? "bg-white/[0.04] shadow-[inset_3px_0_0_#f5b942]" : "hover:bg-white/[0.03]"
@@ -68,6 +68,7 @@ export function FleetList({
                 <span aria-hidden="true">·</span>
                 <span>{PATTERN_LABEL[engine.pattern] ?? engine.pattern}</span>
                 {isStart ? <span className="text-tide">Start here</span> : null}
+                <span>{engine.origin === "import" ? "Shop file" : "NASA demo"}</span>
               </div>
               <p className="mt-2 font-mono text-[11px] text-mist">
                 {sensorWords(engine.topSensors)}
@@ -95,6 +96,5 @@ interface FleetListProps {
   query: string
   onQueryChange: (query: string) => void
   onSelect: (unitId: number) => void
-  expanded?: boolean
   emptyLabel?: string
 }

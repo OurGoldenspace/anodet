@@ -1,0 +1,57 @@
+# Drag this file onto a Railway project canvas to stage api + web + a SQLite volume.
+# Then set secrets in the Railway UI. Do not put SHOP_PASSPHRASE in git.
+#
+# Local judging still uses docker-compose.yml (http://api:8000), not this file.
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    expose:
+      - "8000"
+    environment:
+      PORT: "8000"
+      ANODET_DB: /var/lib/anodet/anodet.db
+      ANODET_DATA: /data/cmapss/train_FD001.txt
+      SHOP_PASSPHRASE_HINT: "0"
+      DEMO_TOOLS: ${DEMO_TOOLS:-0}
+      SHOP_ID: ${SHOP_ID:-pilot}
+      SHOP_NAME: ${SHOP_NAME:-Pilot shop}
+      SHOP_PASSPHRASE: ${SHOP_PASSPHRASE:-}
+      SHOP_LEAD: ${SHOP_LEAD:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      XAI_API_KEY: ${XAI_API_KEY:-}
+      XAI_MODEL: ${XAI_MODEL:-grok-4}
+    volumes:
+      - shop-memory:/var/lib/anodet
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/health' % os.environ.get('PORT','8000'))",
+        ]
+      interval: 20s
+      timeout: 5s
+      retries: 8
+      start_period: 90s
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+      args:
+        API_PROXY_URL: http://api.railway.internal:8000
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: "3000"
+      API_PROXY_URL: http://api.railway.internal:8000
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  shop-memory:

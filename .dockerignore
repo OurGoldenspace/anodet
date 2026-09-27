@@ -4,5 +4,7 @@ web/.next
 services/api/.venv
 services/api/audit.db
 services/api/.env
+.env
+docs
 **/__pycache__
 **/*.pyc

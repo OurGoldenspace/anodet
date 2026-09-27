@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { clearSession, emptyShop, getEngine, getFixes, getFleet, getNotes, readSession, removeImportedAsset, resetMemory, seedDemo } from "@/lib/api"
+import { clearSession, emptyShop, getEngine, getFixes, getFleet, getNotes, getShop, readSession, removeImportedAsset, resetMemory, seedDemo } from "@/lib/api"
 import { formatUnit, OUTCOME_LABEL } from "@/lib/format"
 import type { EngineDetail, FleetResponse, ReviewedFix, ShopSession } from "@/lib/types"
 import { CasePanel } from "@/components/case-panel"
@@ -33,12 +33,17 @@ export function CommandCenter() {
   const [pathReady, setPathReady] = useState(false)
   const [deskTab, setDeskTab] = useState<DeskTab>("case")
   const [inviteCopied, setInviteCopied] = useState(false)
+  const [demoTools, setDemoTools] = useState(true)
+  const [appendMode, setAppendMode] = useState(false)
 
   useEffect(() => {
     setSession(readSession())
     setDeskPath(window.localStorage.getItem(PATH_KEY))
     setSessionReady(true)
     setPathReady(true)
+    getShop()
+      .then((shop) => setDemoTools(shop.demoTools !== false))
+      .catch(() => undefined)
   }, [])
 
   const onCycleChange = useCallback((next: number) => {
@@ -135,7 +140,10 @@ export function CommandCenter() {
     if (path === "shop") {
       const shopFirst = fleet?.engines.find((engine) => engine.origin === "import")
       setSelectedId(shopFirst?.unitId ?? null)
-      setIsShopOpen(true)
+      if (session?.role !== "technician") {
+        setAppendMode(false)
+        setIsShopOpen(true)
+      }
       return
     }
     setSelectedId(31)
@@ -143,7 +151,7 @@ export function CommandCenter() {
 
   function onShopImported(next: FleetResponse, unitId: number | null) {
     setFleet(next)
-    setDemoNote("Shop desk updated. Isolation Forest stays on the healthy hours you marked.")
+    setDemoNote("Shop desk updated. The detector stayed on the healthy hours you marked.")
     if (unitId != null) {
       setSelectedId(unitId)
       setDeskTab("case")
@@ -197,7 +205,7 @@ export function CommandCenter() {
     if (!window.confirm("Remove every saved fix, including technicians' fixes? The manual and the machine notes stay.")) return
     await emptyShop()
     setFixes([])
-    setDemoNote("Shop memory is empty. Engine 31 starts with no reviewed fix.")
+    setDemoNote("Shop memory is empty. Engine 31 starts with nothing remembered.")
     const start = fleet?.recommendedUnitId ?? selectedId
     setSelectedId(null)
     window.setTimeout(() => setSelectedId(start), 0)
@@ -223,7 +231,7 @@ export function CommandCenter() {
   if (!fleet) {
     return (
       <main className="flex min-h-screen items-center justify-center px-6">
-        <p className="text-sm text-mist">Fitting the healthy-baseline model on NASA FD001…</p>
+        <p className="text-sm text-mist">Loading the NASA demo fleet and shop memory…</p>
       </main>
     )
   }
@@ -237,8 +245,9 @@ export function CommandCenter() {
   const shopEmpty = isShopDesk && !hasShopAssets
   const stageReady = !shopEmpty && detail != null && detail.unitId === selectedId && cycle != null
 
-  const canUndoImport = !isSampleEngine
-  const showJudgeTools = !isShopDesk
+  const isLead = session.role !== "technician"
+  const canUndoImport = isLead && !isSampleEngine
+  const showJudgeTools = isLead && demoTools && !isShopDesk
 
   return (
     <main className="flex h-dvh flex-col overflow-hidden">
@@ -246,29 +255,41 @@ export function CommandCenter() {
         <div>
           <div className="flex items-baseline gap-3">
             <p className="font-mono text-lg tracking-[0.22em]">ANODET</p>
-            <p className="hidden text-sm text-mist sm:block">Reviewed maintenance cases</p>
+            <p className="hidden text-sm text-mist sm:block">Machines generate data. Technicians generate knowledge.</p>
           </div>
           <p className="mt-1 hidden text-xs text-mist sm:block">
             {isShopDesk
               ? hasShopAssets
-                ? `Your shop file · ${shopEngines.length} assets · NASA sample is on Change start`
+                ? `Your shop file · ${shopEngines.length} assets · NASA demo is on Change start`
                 : "Your shop · drop a history file to start"
               : hasShopAssets
-                ? `Shop assets on the sample fleet · ${fleet.stats.engines} engines`
-                : `Sample fleet · NASA C-MAPSS FD001 · not your machines · ${fleet.stats.engines} engines`}
+                ? `Shop assets on the NASA demo fleet · ${fleet.stats.engines} engines`
+                : `NASA C-MAPSS FD001 demo · not a customer · ${fleet.stats.engines} engines`}
           </p>
         </div>
         <div className="flex items-center justify-end gap-2">
-          <p className="max-w-[8rem] truncate text-sm text-mist sm:max-w-none">{session.name}</p>
+          <p className="max-w-[8rem] truncate text-sm text-mist sm:max-w-none">
+            {session.name}
+            <span className="ml-2 font-mono text-[10px] uppercase tracking-[0.12em]">
+              {session.role === "technician" ? "Tech" : "Lead"}
+            </span>
+          </p>
           <details className="relative lg:hidden">
             <summary className="cursor-pointer list-none rounded-md border border-line px-3 py-2 text-sm">Menu</summary>
             <div className="absolute right-0 z-20 mt-2 flex w-64 flex-col gap-2 rounded-md border border-line bg-ink p-2">
               <button type="button" onClick={() => { setInviteCopied(false); setIsInviteOpen(true) }} className="rounded-md border border-line px-3 py-2 text-left text-sm">
                 Invite
               </button>
-              <button type="button" onClick={() => setIsShopOpen(true)} className="rounded-md border border-line px-3 py-2 text-left text-sm">
-                Bring shop file
-              </button>
+              {isLead ? (
+                <button type="button" onClick={() => { setAppendMode(false); setIsShopOpen(true) }} className="rounded-md border border-line px-3 py-2 text-left text-sm">
+                  Bring shop file
+                </button>
+              ) : null}
+              {hasShopAssets ? (
+                <button type="button" onClick={() => { setAppendMode(true); setIsShopOpen(true) }} className="rounded-md border border-line px-3 py-2 text-left text-sm">
+                  Later hours
+                </button>
+              ) : null}
               {showJudgeTools && isSampleEngine ? (
                 <>
                   <button type="button" onClick={() => void onSeed()} className="rounded-md bg-amber px-3 py-2 text-left text-sm font-medium text-ink">
@@ -306,9 +327,16 @@ export function CommandCenter() {
             >
               Invite
             </button>
-            <button type="button" onClick={() => setIsShopOpen(true)} className="rounded-md border border-line px-3 py-2 text-sm">
-              Bring shop file
-            </button>
+            {isLead ? (
+              <button type="button" onClick={() => { setAppendMode(false); setIsShopOpen(true) }} className="rounded-md border border-line px-3 py-2 text-sm">
+                Bring shop file
+              </button>
+            ) : null}
+            {hasShopAssets ? (
+              <button type="button" onClick={() => { setAppendMode(true); setIsShopOpen(true) }} className="rounded-md border border-line px-3 py-2 text-sm">
+                Later hours
+              </button>
+            ) : null}
             {showJudgeTools ? (
               <details className="relative" onToggle={(event) => { if (event.currentTarget.open) void refreshNotes() }}>
                 <summary className="cursor-pointer list-none rounded-md border border-line px-3 py-2 text-sm">Sample shop</summary>
@@ -366,16 +394,40 @@ export function CommandCenter() {
           </div>
         </div>
       </header>
+      <div className="hidden shrink-0 items-center gap-6 border-b border-line px-5 py-2 text-xs text-mist lg:flex">
+        <p>
+          <span className="font-mono uppercase tracking-[0.12em] text-foam">Assets </span>
+          {visibleEngines.length}
+        </p>
+        <p>
+          <span className="font-mono uppercase tracking-[0.12em] text-foam">Remembered </span>
+          {fixes.length}
+        </p>
+        <p>
+          <span className="font-mono uppercase tracking-[0.12em] text-foam">Loop </span>
+          Detect → Investigate → Resolve → Remember → Reuse
+        </p>
+        {!isShopDesk ? (
+          <p>
+            <span className="font-mono uppercase tracking-[0.12em] text-foam">NASA demo lead </span>
+            {fleet.stats.medianLeadTime} cycles · not field accuracy
+          </p>
+        ) : null}
+      </div>
 
       <div className="grid shrink-0 grid-cols-3 border-b border-line lg:hidden">
-        {(["fleet", "engine", "case"] as DeskTab[]).map((tab) => (
+        {([
+          ["fleet", "Detect"],
+          ["engine", "Investigate"],
+          ["case", "Case"],
+        ] as [DeskTab, string][]).map(([tab, label]) => (
           <button
             key={tab}
             type="button"
             onClick={() => setDeskTab(tab)}
             className={`px-2 py-2 text-xs uppercase tracking-[0.14em] ${deskTab === tab ? "text-amber" : "text-mist"}`}
           >
-            {tab}
+            {label}
           </button>
         ))}
       </div>
@@ -384,7 +436,7 @@ export function CommandCenter() {
           <FleetList
             engines={visibleEngines}
             recommendedUnitId={fleet.recommendedUnitId}
-            emptyLabel={isShopDesk ? "Bring a shop file. The NASA sample is on Change start." : undefined}
+            emptyLabel={isShopDesk ? "Bring a shop file. The NASA demo is on Change start." : undefined}
             selectedId={selectedId}
             query={query}
             onQueryChange={setQuery}
@@ -392,16 +444,19 @@ export function CommandCenter() {
               setSelectedId(unitId)
               setDeskTab("case")
             }}
-            expanded={deskTab === "fleet"}
           />
         </div>
         <div className={`h-full min-h-0 overflow-hidden ${deskTab === "engine" ? "block" : "hidden"} lg:block`}>
           {shopEmpty ? (
             <section className="scroll-thin flex h-full min-h-0 flex-col items-start justify-center gap-3 overflow-y-auto px-6 text-sm leading-6 text-mist">
-              <p>This desk is your shop, not the NASA sample.</p>
-              <button type="button" onClick={() => setIsShopOpen(true)} className="rounded-md bg-amber px-3 py-2 text-sm font-medium text-ink">
-                Bring a shop file
-              </button>
+              <p>This desk is your shop, not the NASA demo fleet.</p>
+              {isLead ? (
+                <button type="button" onClick={() => { setAppendMode(false); setIsShopOpen(true) }} className="rounded-md bg-amber px-3 py-2 text-sm font-medium text-ink">
+                  Bring a shop file
+                </button>
+              ) : (
+                <p>Ask the shop lead to Fit the first history file.</p>
+              )}
             </section>
           ) : stageReady ? (
             <EngineStage engine={detail} cycle={cycle} onCycleChange={onCycleChange} />
@@ -412,7 +467,7 @@ export function CommandCenter() {
         <div className={`h-full min-h-0 overflow-hidden ${deskTab === "case" ? "block" : "hidden"} lg:block`}>
           {shopEmpty ? (
             <aside className="scroll-thin h-full overflow-y-auto p-4 text-sm leading-6 text-mist">
-              Drop your hours and paste the procedure you use. Isolation Forest waits until you mark the healthy window.
+              Drop your hours and paste the procedure you use. The detector waits until you mark the healthy window.
             </aside>
           ) : stageReady ? (
             <CasePanel
@@ -432,7 +487,7 @@ export function CommandCenter() {
       </div>
       <footer className="shrink-0 border-t border-line bg-panel/90 px-4 py-3">
         <div className="flex items-baseline justify-between">
-          <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-mist">Reviewed fixes</p>
+          <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-mist">Shop memory</p>
           <p className="text-xs text-mist">{demoNote ?? (fixes.length ? `${fixes.length} saved` : "None yet")}</p>
         </div>
         {fixes.length > 0 ? (
@@ -480,6 +535,8 @@ export function CommandCenter() {
         onImported={onShopImported}
         selectedUnitId={isSampleEngine ? null : selectedId}
         hasShopAssets={hasShopAssets}
+        appendMode={appendMode}
+        canFit={isLead}
       />
       <PitchDrawer
         open={isPitchOpen}

@@ -146,6 +146,7 @@ export interface ShopInfo {
   name: string
   shopId?: string
   passphraseHint: string | null
+  demoTools?: boolean
 }
 
 export interface ShopSession {
@@ -153,6 +154,7 @@ export interface ShopSession {
   shopId?: string
   name: string
   token: string
+  role?: "lead" | "technician"
 }
 
 export interface CaseExplanation {

@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react"
 import { draftProcedure, explainCase, getCase, getInterest, saveCase, saveInterest, updateManual } from "@/lib/api"
 import { formatUnit, OUTCOME_LABEL } from "@/lib/format"
 import type { CaseExplanation, MaintenanceCase, Outcome, ProcedureDraft } from "@/lib/types"
+import { ProductLoop, type LoopStep } from "@/components/product-loop"
 
 export function CasePanel({ unitId, cycle, author, onOpenUnit, onSaved }: CasePanelProps) {
   const [record, setRecord] = useState<MaintenanceCase | null>(null)
@@ -76,7 +77,7 @@ export function CasePanel({ unitId, cycle, author, onOpenUnit, onSaved }: CasePa
   async function onSave() {
     if (!record) return
     if (!author.trim()) {
-      setError("Add your name in the header before saving a fix.")
+      setError("Add your name in the header before remembering this case.")
       return
     }
     setIsSaving(true)
@@ -93,7 +94,7 @@ export function CasePanel({ unitId, cycle, author, onOpenUnit, onSaved }: CasePa
         outcome,
       })
       setRecord(next)
-      setSavedLabel("Reviewed fix saved.")
+      setSavedLabel("Remembered. Open the next matching asset to reuse it.")
       onSaved()
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not save the fix.")
@@ -138,7 +139,7 @@ export function CasePanel({ unitId, cycle, author, onOpenUnit, onSaved }: CasePa
   const canOpenNext = nextUnit != null && nextUnit !== record.unitId
   const hasReviewed = savedLabel != null || record.ownFix != null
   const isEmptyCase = !shop && !record.ownFix
-  const stage: CaseStep = shop ? "reuse" : hasReviewed ? "reuse" : "decide"
+  const stage: LoopStep = shop ? "reuse" : hasReviewed ? "remember" : "resolve"
 
   return (
     <aside className="scroll-thin flex h-full min-h-0 flex-col overflow-y-auto border-t border-line lg:border-l lg:border-t-0">
@@ -150,11 +151,13 @@ export function CasePanel({ unitId, cycle, author, onOpenUnit, onSaved }: CasePa
         <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.14em] text-amber">
           Stage {record.stage} · {record.manual.pattern === "shop" ? "hour" : "cycle"} {record.cycle}
         </p>
-        <CaseSteps current={stage} isReused={shop != null} />
+        <div className="mt-3">
+          <ProductLoop current={stage} compact />
+        </div>
       </div>
 
       <div className="space-y-4 px-4 py-4">
-        <Block kicker="Machine evidence" tone="evidence">
+        <Block kicker="Detect · evidence" tone="evidence">
           <p className="text-sm leading-6">{record.whatHappened}</p>
           <ul className="mt-2 space-y-1">
             {record.evidence.slice(0, 3).map((sensor) => (
@@ -166,7 +169,7 @@ export function CasePanel({ unitId, cycle, author, onOpenUnit, onSaved }: CasePa
           </ul>
         </Block>
 
-        <Block kicker="Manual" tone="manual">
+        <Block kicker="Investigate · procedure" tone="manual">
           <p className="font-mono text-xs text-amber">
             Section {record.manual.id} · {record.manual.title}
           </p>
@@ -194,7 +197,7 @@ export function CasePanel({ unitId, cycle, author, onOpenUnit, onSaved }: CasePa
           )}
         </Block>
 
-        <Block kicker="Reviewed shop fix" tone="shop">
+        <Block kicker="Reuse · shop memory" tone="shop">
           {shop ? (
             <>
               <p className="text-sm leading-6">{shop.sharedText}</p>
@@ -206,14 +209,14 @@ export function CasePanel({ unitId, cycle, author, onOpenUnit, onSaved }: CasePa
             </>
           ) : record.ownFix ? (
             <>
-              <p className="text-sm leading-6">This case holds the reviewed fix. Other engines with the same signature will lead with it.</p>
+              <p className="text-sm leading-6">Remembered. The next asset with this signature will lead with this case.</p>
               <p className="mt-2 text-xs text-mist">
                 {record.ownFix.author || "Shop"} · {OUTCOME_LABEL[record.ownFix.outcome] ?? record.ownFix.outcome} · {record.ownFix.cause}
               </p>
               <StepList steps={record.ownFix.steps} />
             </>
           ) : (
-            <p className="text-sm leading-6">No reviewed fix for this signature.</p>
+            <p className="text-sm leading-6">Nothing remembered for this signature yet.</p>
           )}
         </Block>
 
@@ -227,7 +230,7 @@ export function CasePanel({ unitId, cycle, author, onOpenUnit, onSaved }: CasePa
         </Block>
 
         <section className="space-y-2">
-          <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-mist">Technician decision</p>
+          <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-mist">Resolve · technician decision</p>
           {isEmptyCase ? (
             <p className="text-sm leading-6">
               No one has reviewed this signature. Ask Grok for a cheaper order, or edit the manual steps yourself.
@@ -254,6 +257,7 @@ export function CasePanel({ unitId, cycle, author, onOpenUnit, onSaved }: CasePa
               onClick={() => {
                 if (nextUnit != null) onOpenUnit(nextUnit)
               }}
+              data-testid="open-recall"
               className="w-full rounded-md bg-amber px-3 py-2 text-sm font-medium text-ink"
             >
               Open Engine {nextUnit}, same signature
@@ -276,6 +280,7 @@ export function CasePanel({ unitId, cycle, author, onOpenUnit, onSaved }: CasePa
           <input
             value={cause}
             onChange={(event) => setCause(event.target.value)}
+            data-testid="case-cause"
             aria-label="Actual cause"
             placeholder="What you found, e.g. hot-section wear confirmed by the cheap checks"
             className="w-full rounded-md border border-line bg-ink px-3 py-2 text-sm outline-none focus:border-amber"
@@ -295,14 +300,16 @@ export function CasePanel({ unitId, cycle, author, onOpenUnit, onSaved }: CasePa
           />
           <button
             type="button"
+            data-testid="remember-case"
             disabled={isSaving}
             onClick={() => void onSave()}
             className={`w-full rounded-md px-3 py-2 text-sm font-medium disabled:opacity-60 ${
               hasReviewed ? "border border-line text-mist" : "bg-tide text-ink"
             }`}
           >
-            {isSaving ? "Saving…" : "Save reviewed fix"}
+            {isSaving ? "Saving…" : "Remember this case"}
           </button>
+          <p className="text-[11px] leading-5 text-mist">Remember writes shop memory. The next matching asset reuses it.</p>
           {savedLabel ? <p className="text-xs text-tide">{savedLabel}</p> : null}
           {error ? <p className="text-xs text-flare">{error}</p> : null}
         </section>
@@ -355,30 +362,6 @@ function InterestPrompt() {
       </button>
       {error ? <p className="text-xs text-flare">{error}</p> : null}
     </div>
-  )
-}
-
-function CaseSteps({ current, isReused }: { current: CaseStep; isReused: boolean }) {
-  const order: CaseStep[] = ["evidence", "decide", "reuse"]
-  const reached = order.indexOf(current)
-  return (
-    <ol className="mt-3 grid grid-cols-3 gap-1" aria-label="Case progress">
-      {order.map((step, index) => {
-        const isDone = index < reached || (step === "reuse" && isReused)
-        const isCurrent = index === reached && !isDone
-        return (
-          <li
-            key={step}
-            aria-current={isCurrent ? "step" : undefined}
-            className={`rounded px-2 py-1 text-center font-mono text-[10px] uppercase tracking-[0.14em] ${
-              isDone ? "bg-tide/20 text-tide" : isCurrent ? "bg-amber/20 text-amber" : "bg-white/[0.03] text-mist"
-            }`}
-          >
-            {index + 1} {STEP_LABEL[step]}
-          </li>
-        )
-      })}
-    </ol>
   )
 }
 
@@ -464,14 +447,6 @@ function Choice({ label, active, onClick }: { label: string; active: boolean; on
 }
 
 type DecisionKind = "use_as_written" | "modify" | "different_cause"
-
-type CaseStep = "evidence" | "decide" | "reuse"
-
-const STEP_LABEL: Record<CaseStep, string> = {
-  evidence: "Evidence",
-  decide: "Decide",
-  reuse: "Reuse",
-}
 
 interface CasePanelProps {
   unitId: number
