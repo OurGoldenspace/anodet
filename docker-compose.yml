@@ -1,0 +1,31 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    expose:
+      - "8000"
+    environment:
+      ANODET_DB: /var/lib/anodet/anodet.db
+      ANODET_DATA: /data/cmapss/train_FD001.txt
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      SHOP_ID: ${SHOP_ID:-sample}
+      SHOP_NAME: ${SHOP_NAME:-Sample fleet}
+      SHOP_PASSPHRASE: ${SHOP_PASSPHRASE:-sample-shop}
+      SHOP_PASSPHRASE_HINT: ${SHOP_PASSPHRASE_HINT:-0}
+    volumes:
+      - shop-memory:/var/lib/anodet
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+      args:
+        API_PROXY_URL: http://api:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  shop-memory:
