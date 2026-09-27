@@ -37,16 +37,26 @@ export async function proxyBackend(request: NextRequest, path: string[]) {
     if (type) out.set("content-type", type)
     return new NextResponse(body, { status: upstream.status, headers: out })
   } catch (error) {
-    const code = error instanceof Error && "code" in error ? String((error as { code?: string }).code) : ""
     return NextResponse.json(
-      {
-        detail: code
-          ? `The shop desk could not reach the scoring service (${code}).`
-          : "The shop desk could not reach the scoring service. Reload and try again.",
-      },
+      { detail: `The shop desk could not reach the scoring service [${proxyError(error)}].` },
       { status: 502 },
     )
   }
+}
+
+function proxyError(error: unknown) {
+  let current = error
+  for (let index = 0; index < 5 && current; index += 1) {
+    if (typeof current === "object" && current && "code" in current && current.code)
+      return String(current.code)
+    if (current instanceof Error && current.message)
+      return current.message.slice(0, 80)
+    if (typeof current === "object" && current && "cause" in current)
+      current = current.cause
+    else
+      break
+  }
+  return "unknown"
 }
 
 async function resolvePrivateTarget(url: URL) {
