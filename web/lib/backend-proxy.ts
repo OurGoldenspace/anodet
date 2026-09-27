@@ -62,7 +62,7 @@ export async function proxyBackend(request: NextRequest, path: string[]) {
   }
 
   return NextResponse.json(
-    { detail: `The shop desk could not reach the scoring service [${failures.join(" | ") || "unknown"}].` },
+    { detail: `The shop desk could not reach the scoring service [http-ipv6 ${failures.join(" | ") || "unknown"}].` },
     { status: 502 },
   )
 }
