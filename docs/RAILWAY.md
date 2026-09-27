@@ -8,7 +8,17 @@ Both images **must build from the repo root**. The API copies `data/cmapss/train
 
 ## 1. Push this repo
 
-Railway deploys from GitHub. Commit and push `OurGoldenspace/anodet` (or your fork) first. Never commit `services/api/.env`.
+Railway deploys from GitHub. This repo is already on `main`. Never commit `services/api/.env`.
+
+On your machine, generate a local passphrase and open the dashboard:
+
+```powershell
+.\scripts\setup-railway.ps1
+```
+
+That writes gitignored files under `backups/` and opens the Railway project. Paste `backups/railway-api.env` and `backups/railway-web.env` into each service’s **Variables → Raw Editor**. Leave `CORS_ORIGINS` empty until the web URL exists.
+
+Ready-to-copy templates without a secret: `deploy/railway-api.env.example` and `deploy/railway-web.env.example`.
 
 ## 2. Create two services from the same repo
 
@@ -102,8 +112,9 @@ You can drag `docker-compose.railway.yml` onto the Railway canvas to stage `api`
 
 `.railway/railway.ts` describes the same two services. It does not deploy by itself.
 
+The Railway CLI is installed globally as `@railway/cli` (`railway` in a new terminal).
+
 ```powershell
-npm install railway
 railway login
 railway link
 railway config plan

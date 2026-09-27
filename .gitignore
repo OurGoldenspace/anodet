@@ -16,6 +16,9 @@ build
 .env.local
 *.db
 backups
+backups/railway-passphrase.txt
+backups/railway-api.env
+backups/railway-web.env
 web/test-results
 web/playwright-report
 web/blob-report
